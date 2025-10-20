@@ -445,6 +445,20 @@ async def get_current_deployment_status(project_id: str, db: Session = Depends(g
             "last_deployment_url": service_data.get("deployment_url"),
             "last_deployment_at": service_data.get("last_deployment_at")
         }
+
+    status_normalized = str(current_deployment.get("status") or "").upper()
+    if status_normalized in {"CANCELED", "CANCELLED"}:
+        # Clean up stale current_deployment entries created before cancellation handling existed
+        service_data["current_deployment"] = None
+        service_data["last_deployment_status"] = status_normalized
+        connection.service_data = service_data
+        db.commit()
+        return {
+            "has_deployment": False,
+            "last_deployment_url": service_data.get("deployment_url"),
+            "last_deployment_at": service_data.get("last_deployment_at"),
+            "status": status_normalized
+        }
     
     # 진행 중인 배포가 있음
     return {

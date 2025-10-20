@@ -614,6 +614,15 @@ export default function ChatPage({ params }: Params) {
       if (response.ok) {
         const data = await response.json();
         if (data.has_deployment) {
+          const normalizedStatus = String(data.status || '').toUpperCase();
+          if (normalizedStatus === 'CANCELED' || normalizedStatus === 'CANCELLED') {
+            setDeploymentId(null);
+            setDeploymentStatus('idle');
+            setPublishLoading(false);
+            setShowPublishPanel(false);
+            console.log('🔍 Deployment was cancelled externally. Resetting UI state.');
+            return;
+          }
           // 진행 중인 배포가 있으면 상태 설정 및 폴링 시작
           setDeploymentId(data.deployment_id);
           setDeploymentStatus('deploying');
@@ -642,6 +651,20 @@ export default function ChatPage({ params }: Params) {
         const data = await r.json();
         
         // 진행 중인 배포가 없으면 폴링 중단 (완료됨)
+        const normalizedStatus = String(data.status || '').toUpperCase();
+        if (normalizedStatus === 'CANCELED' || normalizedStatus === 'CANCELLED') {
+          console.log('🔍 Deployment cancelled. Cleaning up polling.');
+          setDeploymentStatus('idle');
+          setPublishLoading(false);
+          setDeploymentId(null);
+          setShowPublishPanel(false);
+          if (deployPollRef.current) {
+            clearInterval(deployPollRef.current);
+            deployPollRef.current = null;
+          }
+          return;
+        }
+
         if (!data.has_deployment) {
           console.log('🔍 Deployment completed - no active deployment');
           
@@ -1994,7 +2017,7 @@ export default function ChatPage({ params }: Params) {
                           <div className="mb-4 p-4 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                             <p className="text-sm font-medium text-green-700 dark:text-green-400 mb-2">Currently published at:</p>
                             <a 
-                              href={publishedUrl} 
+                              href={publishedUrl ?? undefined} 
                               target="_blank" 
                               rel="noopener noreferrer" 
                               className="text-sm text-green-600 dark:text-green-300 font-mono hover:underline break-all"

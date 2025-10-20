@@ -323,14 +323,16 @@ async def monitor_deployment_status(
                 
                 # Vercel API에서 최신 상태 가져오기
                 status_data = await vercel_service.get_deployment_status(deployment_id)
+                status_raw = status_data.get("status") or ""
+                status_normalized = str(status_raw).upper()
                 
-                # 상태 변경 시에만 또는 READY/ERROR 시에만 로그
-                if status_data["status"] in ["READY", "ERROR"] or elapsed < 0.1:  # 처음 또는 완료 시에만
+                # 상태 변경 시에만 또는 완료 시에만 로그
+                if status_normalized in {"READY", "ERROR", "CANCELED", "CANCELLED"} or elapsed < 0.1:
                     logger.info(f"🔍 Checking deployment {deployment_id} status... (elapsed: {elapsed:.1f}min)")
-                    logger.info(f"🔍 Got status: {status_data['status']} for deployment {deployment_id}")
+                    logger.info(f"🔍 Got status: {status_raw} for deployment {deployment_id}")
                 
                 # READY 상태일 때만 URL 정보 로그
-                if status_data["status"] == "READY":
+                if status_normalized == "READY":
                     raw_response = status_data.get("raw_response", {})
                     logger.info(f"🎉 READY response - aliasFinal: {raw_response.get('aliasFinal')}, alias: {raw_response.get('alias', [])[:2]}, url: {raw_response.get('url')}")
                     logger.info(f"🎉 Final URL selected: {status_data['url']}")
@@ -339,13 +341,14 @@ async def monitor_deployment_status(
                 await update_deployment_status_in_db(project_id, status_data, db_session_factory)
                 
                 # 완료 상태 체크 - ready 필드도 확인
-                is_ready = (status_data["status"] == "READY" or 
+                is_ready = (status_normalized == "READY" or 
                            status_data.get("ready") == True or
                            status_data.get("readyState") == "READY")
-                is_error = status_data["status"] == "ERROR"
+                is_error = status_normalized == "ERROR"
+                is_cancelled = status_normalized in {"CANCELED", "CANCELLED"}
                 
-                if is_ready or is_error:
-                    logger.info(f"✅ Deployment {deployment_id} finished with status: {status_data['status']}")
+                if is_ready or is_error or is_cancelled:
+                    logger.info(f"✅ Deployment {deployment_id} finished with status: {status_raw or status_normalized}")
                     break
                 
                 # 3초 대기
@@ -393,23 +396,31 @@ async def update_deployment_status_in_db(
             if connection:
                 service_data = dict(connection.service_data) if connection.service_data else {}
                 
-                # current_deployment 정보 업데이트
-                service_data["current_deployment"] = {
-                    "deployment_id": status_data["id"],
-                    "status": status_data["status"],
-                    "deployment_url": status_data["url"],
-                    "last_checked_at": datetime.utcnow().isoformat() + "Z"
-                }
-                
-                # 배포 완료 시 deployment_url 메인에도 업데이트
-                if status_data["status"] == "READY":
-                    service_data["deployment_url"] = f"https://{status_data['url']}" if not str(status_data["url"]).startswith("http") else status_data["url"]
-                    service_data["last_deployment_at"] = datetime.utcnow().isoformat() + "Z"
-                    # 모니터링 완료 시 current_deployment 제거
+                status_raw = status_data.get("status") or ""
+                status_normalized = str(status_raw).upper()
+                final_statuses = {"READY", "ERROR", "CANCELED", "CANCELLED"}
+
+                service_data["last_deployment_status"] = status_normalized
+                service_data["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
+
+                if status_normalized in final_statuses:
+                    if status_normalized == "READY":
+                        url_value = status_data.get("url")
+                        if url_value:
+                            service_data["deployment_url"] = (
+                                f"https://{url_value}" if not str(url_value).startswith("http") else url_value
+                            )
+                        service_data["last_deployment_at"] = datetime.utcnow().isoformat() + "Z"
+                    # 모니터링이 종료된 상태이므로 current_deployment 제거
                     service_data["current_deployment"] = None
-                elif status_data["status"] == "ERROR":
-                    # 에러 시에도 current_deployment 제거
-                    service_data["current_deployment"] = None
+                else:
+                    # 진행 중인 배포 정보 저장
+                    service_data["current_deployment"] = {
+                        "deployment_id": status_data.get("id"),
+                        "status": status_raw,
+                        "deployment_url": status_data.get("url"),
+                        "last_checked_at": datetime.utcnow().isoformat() + "Z"
+                    }
                 
                 # 명시적으로 새 dict 할당
                 connection.service_data = service_data
