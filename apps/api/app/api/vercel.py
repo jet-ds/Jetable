@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Optional
 import logging
 from uuid import uuid4
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.api.deps import get_db
 from app.models.projects import Project
@@ -47,12 +47,12 @@ class VercelDeploymentResponse(BaseModel):
 @router.get("/vercel/check-project/{project_name}")
 async def check_vercel_project_availability(project_name: str, db: Session = Depends(get_db)):
     """Check if a Vercel project name is available"""
-    
+
     # Get Vercel token
     vercel_token = get_token(db, "vercel")
     if not vercel_token:
         raise HTTPException(status_code=401, detail="Vercel token not configured")
-    
+
     try:
         # First validate the token
         vercel_service = VercelService(vercel_token)
@@ -92,12 +92,12 @@ async def connect_vercel_project(
     db: Session = Depends(get_db)
 ):
     """Create Vercel project and connect it to the existing GitHub repository"""
-    
+
     # Check if project exists
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
     # Check if GitHub is connected (required for Vercel)
     github_connection = db.query(ProjectServiceConnection).filter(
         ProjectServiceConnection.project_id == project_id,
@@ -445,7 +445,85 @@ async def get_current_deployment_status(project_id: str, db: Session = Depends(g
             "last_deployment_url": service_data.get("deployment_url"),
             "last_deployment_at": service_data.get("last_deployment_at")
         }
+
+    status_normalized = str(current_deployment.get("status") or "").upper()
+
+    # If the status looks stale (e.g. server restarted and we stopped monitoring), refresh from Vercel
+    needs_refresh = False
+    last_checked_at_str = current_deployment.get("last_checked_at")
+    if last_checked_at_str:
+        try:
+            last_checked_at = datetime.fromisoformat(last_checked_at_str.replace("Z", "+00:00"))
+            if (datetime.utcnow() - last_checked_at) > timedelta(seconds=20):
+                needs_refresh = True
+        except ValueError:
+            needs_refresh = True
+    else:
+        needs_refresh = True
+
+    if needs_refresh:
+        vercel_token = get_token(db, "vercel")
+        deployment_id = current_deployment.get("deployment_id")
+        if vercel_token and deployment_id:
+            vercel_service = VercelService(vercel_token)
+            try:
+                latest_status = await vercel_service.get_deployment_status(deployment_id)
+                status_raw = latest_status.get("status") or ""
+                status_normalized = str(status_raw).upper()
+
+                # Update service_data with the fresh status information
+                refreshed_service_data = dict(service_data)
+                refreshed_service_data["last_deployment_status"] = status_normalized
+                refreshed_service_data["last_checked_at"] = datetime.utcnow().isoformat() + "Z"
+
+                final_statuses = {"READY", "ERROR", "CANCELED", "CANCELLED"}
+                if status_normalized in final_statuses:
+                    if status_normalized == "READY":
+                        url_value = latest_status.get("url")
+                        if url_value:
+                            refreshed_service_data["deployment_url"] = (
+                                f"https://{url_value}" if not str(url_value).startswith("http") else url_value
+                            )
+                        refreshed_service_data["last_deployment_at"] = datetime.utcnow().isoformat() + "Z"
+                    refreshed_service_data["current_deployment"] = None
+                else:
+                    refreshed_service_data["current_deployment"] = {
+                        "deployment_id": deployment_id,
+                        "status": status_raw,
+                        "deployment_url": latest_status.get("url"),
+                        "last_checked_at": datetime.utcnow().isoformat() + "Z"
+                    }
+
+                connection.service_data = refreshed_service_data
+                db.commit()
+                db.refresh(connection)
+                service_data = connection.service_data or {}
+                current_deployment = service_data.get("current_deployment")
+                status_normalized = str((current_deployment or {}).get("status") or "").upper()
+            except Exception as exc:
+                logger.warning(f"Failed to refresh Vercel deployment status for {deployment_id}: {exc}")
+
+    if status_normalized in {"CANCELED", "CANCELLED"}:
+        # Clean up stale current_deployment entries created before cancellation handling existed
+        service_data["current_deployment"] = None
+        service_data["last_deployment_status"] = status_normalized
+        connection.service_data = service_data
+        db.commit()
+        return {
+            "has_deployment": False,
+            "last_deployment_url": service_data.get("deployment_url"),
+            "last_deployment_at": service_data.get("last_deployment_at"),
+            "status": status_normalized
+        }
     
+    if not current_deployment:
+        # Monitoring determined the deployment finished (READY/ERROR) during refresh cycle
+        return {
+            "has_deployment": False,
+            "last_deployment_url": service_data.get("deployment_url"),
+            "last_deployment_at": service_data.get("last_deployment_at"),
+            "status": service_data.get("last_deployment_status")
+        }
     # 진행 중인 배포가 있음
     return {
         "has_deployment": True,
