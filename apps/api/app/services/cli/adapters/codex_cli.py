@@ -392,6 +392,7 @@ Do not create subdirectories unless specifically requested by the user.
 
             # Message buffering
             agent_message_buffer = ""
+            thinking_streams: Dict[str, Dict[str, Any]] = {}
 
             # Send initial instruction payload via stdin (exec expects prompt on stdin)
             if process.stdin:
@@ -590,7 +591,75 @@ Do not create subdirectories unless specifically requested by the user.
                                 )
                             continue
 
-                        # Skip other item.* types (reasoning, plan, etc.) for now
+                        normalized_item_type = item_type.lower()
+                        is_thinking_item = any(
+                            token in normalized_item_type for token in ("think", "plan")
+                        )
+
+                        if is_thinking_item:
+                            item_id = (
+                                str(item_payload.get("id"))
+                                if item_payload.get("id") is not None
+                                else str(event_payload.get("item_id") or uuid.uuid4())
+                            )
+                            stream_state = thinking_streams.setdefault(
+                                item_id,
+                                {
+                                    "type": normalized_item_type,
+                                    "text": "",
+                                },
+                            )
+
+                            if msg_type in ("item.started", "item.created"):
+                                # Reset buffer on a fresh thinking block
+                                stream_state["text"] = ""
+                                thinking_streams[item_id] = stream_state
+                                continue
+
+                            text_delta = self._extract_thinking_delta(
+                                msg_type, event_payload, item_payload
+                            )
+
+                            if text_delta:
+                                stream_state["text"] += text_delta
+
+                            if msg_type == "item.completed":
+                                final_text = (
+                                    self._extract_thinking_final(item_payload)
+                                    or stream_state["text"]
+                                )
+                                thinking_streams.pop(item_id, None)
+                                flush_text = final_text
+                                is_partial = False
+                            elif text_delta:
+                                flush_text = stream_state["text"]
+                                is_partial = True
+                            else:
+                                # Nothing to show yet
+                                continue
+
+                            if flush_text:
+                                yield Message(
+                                    id=str(uuid.uuid4()),
+                                    project_id=project_path,
+                                    role="assistant",
+                                    message_type="thinking",
+                                    content=flush_text,
+                                    metadata_json={
+                                        "cli_type": self.cli_type.value,
+                                        "thinking_item_id": item_id,
+                                        "thinking_type": stream_state["type"],
+                                        "is_partial": is_partial,
+                                    },
+                                    session_id=session_id,
+                                    created_at=datetime.utcnow(),
+                                )
+
+                            if msg_type in ("item.completed", "item.failed", "item.error"):
+                                thinking_streams.pop(item_id, None)
+                            continue
+
+                        # Skip other item.* types we do not surface yet
                         continue
 
                     # Buffer agent message deltas
@@ -1053,6 +1122,44 @@ Do not create subdirectories unless specifically requested by the user.
                 )
         except Exception as e:
             ui.error(f"Failed to create AGENTS.md: {e}", "Codex")
+
+    @staticmethod
+    def _extract_text_candidate(source: Any) -> Optional[str]:
+        """Pull a string-like field from heterogeneous Codex payloads."""
+        if isinstance(source, str):
+            return source
+        if isinstance(source, dict):
+            for key in ("text", "content", "output", "message"):
+                value = source.get(key)
+                if isinstance(value, str) and value:
+                    return value
+        return None
+
+    def _extract_thinking_delta(
+        self,
+        msg_type: str,
+        event_payload: Dict[str, Any],
+        item_payload: Dict[str, Any],
+    ) -> Optional[str]:
+        """Extract incremental thinking text from an item.* event."""
+        if msg_type not in ("item.delta", "item.updated", "item.message.delta"):
+            # Some Codex builds emit agent_message_delta instead; guard accordingly.
+            return self._extract_text_candidate(item_payload.get("delta")) or self._extract_text_candidate(
+                event_payload.get("delta")
+            )
+        delta = (
+            self._extract_text_candidate(item_payload.get("delta"))
+            or self._extract_text_candidate(event_payload.get("delta"))
+        )
+        return delta
+
+    def _extract_thinking_final(self, item_payload: Dict[str, Any]) -> Optional[str]:
+        """Extract the final thinking text once Codex completes an item."""
+        for key in ("text", "output", "content", "result"):
+            value = item_payload.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
 
     async def _set_codex_approval_policy(self, process, session_id: str):
         """Set Codex approval policy to never (full-auto mode)"""

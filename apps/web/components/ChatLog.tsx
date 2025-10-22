@@ -107,7 +107,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8080';
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant' | 'system' | 'tool';
-  message_type?: 'chat' | 'tool_result' | 'system' | 'error' | 'info';
+  message_type?: 'chat' | 'tool_result' | 'system' | 'error' | 'info' | 'thinking';
   content: string;
   metadata_json?: any;
   parent_message_id?: string;
