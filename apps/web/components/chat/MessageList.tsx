@@ -64,6 +64,16 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
         {messageGroups.map((group, groupIndex) => {
           const firstMessage = group[0];
           const isUser = firstMessage.role === 'user';
+          const thinkingMessages = group.filter(message => message.message_type === 'thinking');
+          const latestThinkingMap = new Map<string, string>();
+          thinkingMessages.forEach(message => {
+            const itemId = message.metadata_json?.thinking_item_id || message.id;
+            latestThinkingMap.set(itemId, message.content);
+          });
+          const aggregatedThinkingContent = Array.from(latestThinkingMap.values())
+            .map(content => content.trim())
+            .filter(Boolean)
+            .join('\n\n');
           
           return (
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`} key={`group-${groupIndex}-${firstMessage.id}`}>
@@ -83,10 +93,20 @@ export function MessageList({ messages, isLoading }: MessageListProps) {
                 }`}
               >
                 {group.map((message, messageIndex) => {
+                  if (message.message_type === 'thinking') {
+                    return null;
+                  }
                   // Check if this message has thinking data
-                  const hasThinking = message.metadata_json?.thinking_content || message.metadata_json?.thinking_duration;
+                  const hasGeneratedThinking = Boolean(aggregatedThinkingContent);
+                  const fallbackThinkingContent = message.metadata_json?.thinking_content;
+                  const hasThinking =
+                    (!isUser && messageIndex === 0 && hasGeneratedThinking) ||
+                    Boolean(fallbackThinkingContent);
                   const thinkingDuration = message.metadata_json?.thinking_duration || 10; // Default to 10 seconds
-                  const thinkingContent = message.metadata_json?.thinking_content || "Processing request...";
+                  const thinkingContent =
+                    aggregatedThinkingContent ||
+                    fallbackThinkingContent ||
+                    "Processing request...";
                   const isThoughtExpanded = expandedThoughts.has(message.id);
                   
                   return (
