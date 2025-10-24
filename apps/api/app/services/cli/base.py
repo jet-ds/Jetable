@@ -51,16 +51,19 @@ MODEL_MAPPING: Dict[str, Dict[str, str]] = {
         "opus-4.1": "claude-opus-4-1-20250805",
         "sonnet-4.5": "claude-sonnet-4-5-20250929",
         "opus-4": "claude-opus-4-20250514",
+        "haiku-4.5": "claude-haiku-4-5-20251001",
         "haiku-3.5": "claude-3-5-haiku-20241022",
         # Handle claude-prefixed model names
         "claude-sonnet-4.5": "claude-sonnet-4-5-20250929",
         "claude-opus-4.1": "claude-opus-4-1-20250805",
         "claude-opus-4": "claude-opus-4-20250514",
+        "claude-haiku-4.5": "claude-haiku-4-5-20251001",
         "claude-haiku-3.5": "claude-3-5-haiku-20241022",
         # Support direct full model names
         "claude-opus-4-1-20250805": "claude-opus-4-1-20250805",
         "claude-sonnet-4-5-20250929": "claude-sonnet-4-5-20250929",
         "claude-opus-4-20250514": "claude-opus-4-20250514",
+        "claude-haiku-4-5-20251001": "claude-haiku-4-5-20251001",
         "claude-3-5-haiku-20241022": "claude-3-5-haiku-20241022",
     },
     "cursor": {

@@ -42,6 +42,7 @@ const CLI_OPTIONS: CLIOption[] = [
     models: [
       { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5' },
       { id: 'claude-opus-4.1', name: 'Claude Opus 4.1' },
+      { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5' },
     ]
   },
   {

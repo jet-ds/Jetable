@@ -65,6 +65,7 @@ class ClaudeCodeCLI(BaseCLI):
                 "default_models": [
                     "claude-sonnet-4-5-20250929",
                     "claude-opus-4-1-20250805",
+                    "claude-haiku-4-5-20251001",
                 ],
             }
         except FileNotFoundError:
