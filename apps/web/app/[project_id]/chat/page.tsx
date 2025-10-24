@@ -38,8 +38,11 @@ const CLI_ORDER = ['claude', 'cursor', 'codex', 'qwen', 'gemini'] as const;
 
 const MODEL_FALLBACKS: Record<string, { id: string; name: string; aliases?: string[] }[]> = {
   claude: [
-    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', aliases: ['claude-sonnet-4-20250514', 'sonnet-4'] },
-    { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', aliases: ['claude-sonnet-4-5-20250929', 'sonnet-4.5'] },
+    {
+      id: 'claude-sonnet-4.5',
+      name: 'Claude Sonnet 4.5',
+      aliases: ['claude-sonnet-4-5-20250929', 'sonnet-4.5', 'claude-sonnet-4', 'claude-sonnet-4-20250514']
+    },
     { id: 'claude-opus-4.1', name: 'Claude Opus 4.1', aliases: ['claude-opus-4-1-20250805', 'opus-4.1'] },
     { id: 'claude-opus-4', name: 'Claude Opus 4', aliases: ['claude-opus-4-20250514', 'opus-4'] },
     { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', aliases: ['claude-haiku-4-5-20251001', 'haiku-4.5'] },
@@ -47,7 +50,7 @@ const MODEL_FALLBACKS: Record<string, { id: string; name: string; aliases?: stri
   ],
   cursor: [
     { id: 'gpt-5', name: 'GPT-5' },
-    { id: 'claude-sonnet-4', name: 'Claude Sonnet 4', aliases: ['sonnet-4'] },
+    { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', aliases: ['sonnet-4', 'sonnet-4.5'] },
     { id: 'claude-opus-4.1', name: 'Claude Opus 4.1', aliases: ['opus-4.1'] }
   ],
   codex: [
@@ -339,6 +342,15 @@ export default function ChatPage({ params }: Params) {
   const [preferredCli, setPreferredCli] = useState<string>('claude');
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [usingGlobalDefaults, setUsingGlobalDefaults] = useState<boolean>(true);
+  const [isHydratingModel, setIsHydratingModel] = useState<boolean>(true);
+  const projectPrefsLoadedRef = useRef(false);
+  const statusLoadedRef = useRef(false);
+
+  const finalizeModelHydration = useCallback(() => {
+    if (projectPrefsLoadedRef.current && statusLoadedRef.current) {
+      setIsHydratingModel(false);
+    }
+  }, [setIsHydratingModel]);
   const [thinkingMode, setThinkingMode] = useState<boolean>(false);
   const [isUpdatingModel, setIsUpdatingModel] = useState<boolean>(false);
   const [currentRoute, setCurrentRoute] = useState<string>('/');
@@ -414,15 +426,30 @@ export default function ChatPage({ params }: Params) {
       setCliStatuses(snapshot);
     } catch (error) {
       console.error('Failed to load CLI statuses:', error);
-      setCliStatuses({});
+    } finally {
+      statusLoadedRef.current = true;
+      finalizeModelHydration();
     }
-  }, [projectId]);
+  }, [projectId, finalizeModelHydration]);
 
   const handleModelChange = useCallback(
-    async (option: ModelOption, opts?: { skipCliUpdate?: boolean; overrideCli?: string }) => {
+    async (
+      option: ModelOption,
+      opts?: {
+        skipCliUpdate?: boolean;
+        overrideCli?: string;
+        suppressSideEffects?: boolean;
+        skipStatusReload?: boolean;
+      }
+    ) => {
       if (!projectId || !option) return;
 
-      const { skipCliUpdate = false, overrideCli } = opts || {};
+      const {
+        skipCliUpdate = false,
+        overrideCli,
+        suppressSideEffects = false,
+        skipStatusReload = false
+      } = opts || {};
       const targetCli = overrideCli ?? option.cli;
       const newModelId = option.id;
 
@@ -433,9 +460,15 @@ export default function ChatPage({ params }: Params) {
         return;
       }
 
-      setUsingGlobalDefaults(false);
+      if (!suppressSideEffects) {
+        setUsingGlobalDefaults(false);
+      }
       updatePreferredCli(targetCli);
       updateSelectedModel(newModelId);
+
+      if (suppressSideEffects) {
+        return;
+      }
 
       setIsUpdatingModel(true);
 
@@ -484,7 +517,9 @@ export default function ChatPage({ params }: Params) {
           console.warn('Failed to record model switch message:', messageError);
         }
 
-        await loadCliStatuses();
+        if (!skipStatusReload) {
+          await loadCliStatuses();
+        }
       } catch (error) {
         console.error('Failed to update model preference:', error);
         updatePreferredCli(previousCli);
@@ -559,10 +594,14 @@ export default function ChatPage({ params }: Params) {
         || modelOptions.find(option => option.available)
         || modelOptions[0];
       if (fallbackOption) {
-        void handleModelChange(fallbackOption);
+        const suppressSideEffects = isHydratingModel;
+        void handleModelChange(
+          fallbackOption,
+          suppressSideEffects ? { suppressSideEffects: true } : undefined
+        );
       }
     }
-  }, [modelOptions, preferredCli, selectedModel, handleModelChange]);
+  }, [modelOptions, preferredCli, selectedModel, handleModelChange, isHydratingModel]);
 
   const loadDeployStatus = useCallback(async () => {
     try {
@@ -1153,7 +1192,7 @@ export default function ChatPage({ params }: Params) {
               // Set default model based on CLI
               const currentCli = hasCliSet || defaultCli;
               if (currentCli === 'claude') {
-                updateSelectedModel('claude-sonnet-4');
+                updateSelectedModel('claude-sonnet-4.5');
               } else if (currentCli === 'cursor') {
                 updateSelectedModel('gpt-5');
               } else if (currentCli === 'codex') {
@@ -1171,7 +1210,7 @@ export default function ChatPage({ params }: Params) {
           if (response.ok) {
             const settings = await response.json();
             if (!hasCliSet) updatePreferredCli(settings.preferred_cli || 'claude');
-            if (!hasModelSet) updateSelectedModel(settings.preferred_cli === 'claude' ? 'claude-sonnet-4' : 'gpt-5');
+            if (!hasModelSet) updateSelectedModel(settings.preferred_cli === 'claude' ? 'claude-sonnet-4.5' : 'gpt-5');
           }
         }
       }
@@ -1181,7 +1220,7 @@ export default function ChatPage({ params }: Params) {
       const hasCliSet = projectSettings?.cli || preferredCli;
       const hasModelSet = projectSettings?.model || selectedModel;
       if (!hasCliSet) updatePreferredCli('claude');
-      if (!hasModelSet) updateSelectedModel('claude-sonnet-4');
+      if (!hasModelSet) updateSelectedModel('claude-sonnet-4.5');
     }
   }
 
@@ -1212,6 +1251,8 @@ export default function ChatPage({ params }: Params) {
         setProjectDescription(project.description || '');
         
         // Return project settings for use in loadSettings
+        projectPrefsLoadedRef.current = true;
+        finalizeModelHydration();
         return {
           cli: project.preferred_cli,
           model: project.selected_model
@@ -1256,6 +1297,8 @@ export default function ChatPage({ params }: Params) {
         setProjectStatus('active');
         setIsInitializing(false);
         setUsingGlobalDefaults(true);
+        projectPrefsLoadedRef.current = true;
+        finalizeModelHydration();
         return {}; // Return empty object if no project found
       }
     } catch (error) {
@@ -1268,6 +1311,8 @@ export default function ChatPage({ params }: Params) {
       setProjectStatus('active');
       setIsInitializing(false);
       setUsingGlobalDefaults(true);
+      projectPrefsLoadedRef.current = true;
+      finalizeModelHydration();
       return {}; // Return empty object on error
     }
   }
@@ -1661,7 +1706,7 @@ export default function ChatPage({ params }: Params) {
       updateSelectedModel(modelFromGlobal);
     } else {
       // Fallback per CLI
-      if (cli === 'claude') updateSelectedModel('claude-sonnet-4');
+      if (cli === 'claude') updateSelectedModel('claude-sonnet-4.5');
       else if (cli === 'cursor') updateSelectedModel('gpt-5');
       else if (cli === 'codex') updateSelectedModel('gpt-5');
       else updateSelectedModel('');
