@@ -32,6 +32,7 @@ const CLI_OPTIONS: CLIOption[] = [
     models: [
       { id: 'claude-opus-4.1', name: 'Claude Opus 4.1', description: 'Most intelligent model for complex coding tasks' },
       { id: 'claude-sonnet-4.5', name: 'Claude Sonnet 4.5', description: 'Superior coding with 1M context window' },
+      { id: 'claude-haiku-4.5', name: 'Claude Haiku 4.5', description: 'Fast and cost-effective with Sonnet-level coding' },
     ],
     features: ['Advanced reasoning', 'Code generation', '1M context window']
   },
