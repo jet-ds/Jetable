@@ -38,12 +38,12 @@ class SupabaseConnectResponse(BaseModel):
 class SupabaseProject(BaseModel):
     id: str
     name: str
-    ref: str
-    status: str
+    ref: Optional[str] = None
+    status: Optional[str] = None
     organization_id: str
-    organization_name: str
-    region: str
-    created_at: str
+    organization_name: Optional[str] = None
+    region: Optional[str] = None
+    created_at: Optional[str] = None
 
 
 class SupabaseProjectListResponse(BaseModel):
