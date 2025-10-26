@@ -42,6 +42,7 @@ interface SupabaseApiKeys {
 export default function SupabaseModal({ isOpen, onClose, projectId, projectName, onSuccess }: SupabaseModalProps) {
   const [step, setStep] = useState<'token' | 'configure' | 'creating' | 'success'>('token');
   const [accessToken, setAccessToken] = useState('');
+  const [savedTokenId, setSavedTokenId] = useState('');
   const [organizations, setOrganizations] = useState<SupabaseOrganization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState('');
   const [supabaseProjectName, setSupabaseProjectName] = useState('');
@@ -93,20 +94,52 @@ export default function SupabaseModal({ isOpen, onClose, projectId, projectName,
     setError('');
 
     try {
-      const response = await fetch('https://api.supabase.com/v1/organizations', {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
+      // Step 1: Save token to backend
+      const saveTokenResponse = await fetch(`${API_BASE}/api/tokens`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'supabase',
+          token: accessToken.trim(),
+          name: 'Supabase Personal Access Token'
+        })
       });
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch organizations: ${response.status} ${response.statusText}`);
+      if (!saveTokenResponse.ok) {
+        const errorText = await saveTokenResponse.text();
+        throw new Error(`Failed to save token: ${errorText}`);
       }
 
-      const orgs = await response.json();
+      const tokenData = await saveTokenResponse.json();
+      setSavedTokenId(tokenData.id);
+
+      // Step 2: Fetch organizations via our backend (which uses the saved token)
+      const response = await fetch(`${API_BASE}/api/supabase/projects`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Failed to fetch projects: ${errorText}`);
+      }
+
+      const data = await response.json();
+
+      // Extract unique organizations from projects
+      const orgMap = new Map();
+      if (data.projects && Array.isArray(data.projects)) {
+        data.projects.forEach((project: any) => {
+          if (project.organization_id && !orgMap.has(project.organization_id)) {
+            orgMap.set(project.organization_id, {
+              id: project.organization_id,
+              name: project.organization_name || project.organization_id,
+              slug: project.organization_id
+            });
+          }
+        });
+      }
+
+      const orgs = Array.from(orgMap.values());
       setOrganizations(orgs);
-      
+
       if (orgs.length > 0) {
         setSelectedOrgId(orgs[0].id);
         setStep('configure');
@@ -126,45 +159,36 @@ export default function SupabaseModal({ isOpen, onClose, projectId, projectName,
       return;
     }
 
+    if (!savedTokenId) {
+      setError('Token not saved. Please try again.');
+      return;
+    }
+
     setIsLoading(true);
     setError('');
     setStep('creating');
 
     try {
-      // 1. Create Supabase project
-      const createResponse = await fetch('https://api.supabase.com/v1/projects', {
+      // Create Supabase project via our backend
+      const createResponse = await fetch(`${API_BASE}/api/supabase/create-project`, {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          organization_id: selectedOrgId,
-          name: supabaseProjectName,
+          token_id: savedTokenId,
+          project_name: supabaseProjectName,
           region: selectedRegion,
-          db_pass: dbPassword
+          db_pass: dbPassword,
+          organization_id: selectedOrgId
         })
       });
 
       if (!createResponse.ok) {
         const errorData = await createResponse.text();
-        throw new Error(`Failed to create project: ${createResponse.status} - ${errorData}`);
+        throw new Error(`Failed to create project: ${errorData}`);
       }
 
-      const newProject: SupabaseProject = await createResponse.json();
-      setCreatedProject(newProject);
-
-      // 2. Wait for project to be active
-      await waitForProjectActive(newProject.id);
-
-      // 3. Get API keys
-      const apiKeys = await getProjectApiKeys(newProject.id);
-
-      // 4. Save environment variables
-      await saveEnvironmentVariables(newProject, apiKeys);
-
-      // 5. Save service connection
-      await saveServiceConnection(newProject);
+      const result = await createResponse.json();
+      setCreatedProject(result.project as SupabaseProject);
 
       setStep('success');
       setTimeout(() => {
