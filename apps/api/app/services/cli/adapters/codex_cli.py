@@ -211,7 +211,8 @@ class CodexCLI(BaseCLI):
             workdir_abs,
             "exec",
             "--json",
-            "--include-plan-tool",
+            "--enable",
+            "plan_tool",
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
         ]
@@ -379,6 +380,8 @@ Do not create subdirectories unless specifically requested by the user.
             "Codex",
         )
 
+        event_timeout = int(os.getenv("CLAUDABLE_CODEX_EVENT_TIMEOUT", "90"))
+
         try:
             # Start Codex process
             process = await asyncio.create_subprocess_exec(
@@ -481,7 +484,19 @@ Do not create subdirectories unless specifically requested by the user.
                     continue
 
             if not session_ready:
+                stderr_output = ""
+                if process.stderr:
+                    try:
+                        stderr_bytes = await process.stderr.read()
+                        if stderr_bytes:
+                            stderr_output = stderr_bytes.decode(errors="ignore").strip()
+                    except Exception as stderr_err:
+                        ui.warning(f"Failed to read Codex stderr: {stderr_err}", "Codex")
+
                 ui.error("Failed to initialize Codex session", "Codex")
+                if stderr_output:
+                    ui.error(f"Codex stderr: {stderr_output}", "Codex")
+
                 try:
                     await process.wait()
                 except Exception:
@@ -489,7 +504,27 @@ Do not create subdirectories unless specifically requested by the user.
                 return
 
             # Process streaming events
-            async for line in process.stdout:
+            while True:
+                try:
+                    line = await asyncio.wait_for(
+                        process.stdout.readline(), timeout=event_timeout
+                    )
+                except asyncio.TimeoutError:
+                    ui.error(
+                        f"No Codex events received for {event_timeout}s; terminating session",
+                        "Codex",
+                    )
+                    try:
+                        process.kill()
+                    except Exception:
+                        pass
+                    raise RuntimeError(
+                        f"Codex produced no streaming events for {event_timeout} seconds"
+                    )
+
+                if not line:
+                    break
+
                 line_str = line.decode().strip()
                 if not line_str:
                     continue
@@ -501,6 +536,14 @@ Do not create subdirectories unless specifically requested by the user.
                         continue
                     msg_type = event_payload.get("type")
                     if not msg_type:
+                        continue
+
+                    if msg_type == "codex/event/raw_response_item":
+                        raw_messages = self._convert_raw_response_item(
+                            event_payload, project_path, session_id
+                        )
+                        for raw_message in raw_messages:
+                            yield raw_message
                         continue
 
                     if msg_type in [
@@ -1160,6 +1203,58 @@ Do not create subdirectories unless specifically requested by the user.
             if isinstance(value, str) and value:
                 return value
         return None
+
+    def _convert_raw_response_item(
+        self, payload: Dict[str, Any], project_path: str, session_id: Optional[str]
+    ) -> List[Message]:
+        messages: List[Message] = []
+        if not isinstance(payload, dict):
+            return messages
+
+        response_item = payload.get("msg") or payload.get("item") or payload
+        if not isinstance(response_item, dict):
+            return messages
+
+        if response_item.get("type") != "message":
+            return messages
+
+        role = str(response_item.get("role", "assistant")).lower()
+        content_items = response_item.get("content") or []
+        text_parts: List[str] = []
+
+        if isinstance(content_items, list):
+            for item in content_items:
+                if isinstance(item, dict):
+                    text_value = item.get("text")
+                    if isinstance(text_value, str) and text_value.strip():
+                        text_parts.append(text_value.strip())
+
+        if not text_parts:
+            return messages
+
+        content_text = "\n".join(text_parts).strip()
+        if not content_text:
+            return messages
+
+        mapped_role = role if role in ("assistant", "user", "system") else "assistant"
+        metadata = {
+            "cli_type": self.cli_type.value,
+            "raw_response_item": response_item,
+        }
+
+        messages.append(
+            Message(
+                id=str(uuid.uuid4()),
+                project_id=project_path,
+                role=mapped_role,
+                message_type="chat" if mapped_role != "system" else "system",
+                content=content_text,
+                metadata_json=metadata,
+                session_id=session_id,
+                created_at=datetime.utcnow(),
+            )
+        )
+        return messages
 
     async def _set_codex_approval_policy(self, process, session_id: str):
         """Set Codex approval policy to never (full-auto mode)"""
