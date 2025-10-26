@@ -88,3 +88,44 @@ def test_send_message_and_verify_cli_source(db_session, tmpdir, monkeypatch):
     assert user_message["role"] == "user"
     assert "Test instruction" in user_message["content"]
     assert user_message["cli_source"] == test_cli_preference
+
+
+def test_fallback_cli_source_logic(db_session, tmpdir):
+    # 1. Create a project
+    project_id = str(uuid.uuid4())
+    repo_path = tmpdir.mkdir("repo")
+    project = Project(id=project_id, name="Test Project", repo_path=str(repo_path))
+    db_session.add(project)
+    db_session.commit()
+
+    # 2. Manually create a message with the old metadata key
+    conversation_id = str(uuid.uuid4())
+    from app.models.messages import Message
+    from datetime import datetime
+
+    old_message = Message(
+        id=str(uuid.uuid4()),
+        project_id=project_id,
+        role="user",
+        message_type="chat",
+        content="Old test instruction",
+        metadata_json={"cli_preference": "claude"},
+        conversation_id=conversation_id,
+        created_at=datetime.utcnow(),
+    )
+    db_session.add(old_message)
+    db_session.commit()
+
+    # 3. Retrieve the messages for the conversation
+    messages_response = client.get(
+        f"/api/chat/{project_id}/messages?conversation_id={conversation_id}"
+    )
+    assert messages_response.status_code == 200
+    messages_data = messages_response.json()
+
+    # 4. Verify that the old message has the correct cli_source
+    assert len(messages_data) == 1
+    user_message = messages_data[0]
+    assert user_message["role"] == "user"
+    assert user_message["content"] == "Old test instruction"
+    assert user_message["cli_source"] == "claude"
