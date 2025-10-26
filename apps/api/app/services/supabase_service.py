@@ -131,6 +131,52 @@ class SupabaseService:
             logger.error(f"Error getting Supabase API keys: {e}")
             raise SupabaseAPIError(f"Error getting API keys: {str(e)}")
 
+    async def create_project(
+        self,
+        organization_id: str,
+        name: str,
+        region: str,
+        db_pass: str
+    ) -> Dict[str, Any]:
+        """Create a new Supabase project"""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    f"{SUPABASE_API_BASE}/v1/projects",
+                    headers=self.headers,
+                    json={
+                        "organization_id": organization_id,
+                        "name": name,
+                        "region": region,
+                        "db_pass": db_pass
+                    }
+                )
+
+                if response.status_code in [200, 201]:
+                    project_data = response.json()
+                    logger.info(f"Successfully created Supabase project: {name}")
+                    return project_data
+                elif response.status_code == 400:
+                    error_data = response.json() if response.text else {}
+                    error_msg = error_data.get("message", response.text)
+                    raise SupabaseAPIError(f"Invalid project parameters: {error_msg}", 400)
+                elif response.status_code == 401:
+                    raise SupabaseAPIError("Invalid Supabase token", 401)
+                elif response.status_code == 403:
+                    raise SupabaseAPIError("Insufficient permissions to create project", 403)
+                else:
+                    error_text = response.text
+                    raise SupabaseAPIError(
+                        f"Failed to create project: {response.status_code} - {error_text}",
+                        response.status_code
+                    )
+
+        except SupabaseAPIError:
+            raise
+        except Exception as e:
+            logger.error(f"Error creating Supabase project: {e}")
+            raise SupabaseAPIError(f"Error creating project: {str(e)}")
+
 
 async def validate_supabase_token(token: str) -> Dict[str, Any]:
     """Validate a Supabase token and return organization info"""

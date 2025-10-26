@@ -51,6 +51,20 @@ class SupabaseProjectListResponse(BaseModel):
     projects: List[SupabaseProject]
 
 
+class SupabaseCreateProjectRequest(BaseModel):
+    token_id: str
+    project_name: str
+    region: str
+    db_pass: str
+    organization_id: Optional[str] = None
+
+
+class SupabaseCreateProjectResponse(BaseModel):
+    success: bool
+    project: dict
+    message: str
+
+
 @router.get("/supabase/projects", response_model=SupabaseProjectListResponse)
 async def list_supabase_projects(db: Session = Depends(get_db)):
     """List all Supabase projects accessible with the configured token"""
@@ -103,6 +117,74 @@ async def list_supabase_projects(db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Unexpected error listing Supabase projects: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to list Supabase projects: {str(e)}")
+
+
+@router.post("/supabase/create-project", response_model=SupabaseCreateProjectResponse)
+async def create_supabase_project(
+    request: SupabaseCreateProjectRequest,
+    db: Session = Depends(get_db)
+):
+    """Create a new Supabase project using the provided token"""
+
+    # Get the Supabase token from token_id
+    from app.models.tokens import ServiceToken
+
+    token_record = db.query(ServiceToken).filter(
+        ServiceToken.id == request.token_id
+    ).first()
+
+    if not token_record:
+        raise HTTPException(status_code=404, detail="Token not found")
+
+    if token_record.provider != "supabase":
+        raise HTTPException(status_code=400, detail="Invalid token provider. Expected 'supabase'")
+
+    try:
+        # Initialize Supabase service
+        supabase_service = SupabaseService(token_record.token)
+
+        # Validate token and get organizations
+        validation = await supabase_service.check_token_validity()
+        if not validation.get("valid"):
+            raise HTTPException(status_code=401, detail="Invalid Supabase token")
+
+        # Determine organization_id
+        org_id = request.organization_id
+        if not org_id:
+            # Use first available organization if not specified
+            organizations = validation.get("organizations", [])
+            if not organizations:
+                raise HTTPException(
+                    status_code=400,
+                    detail="No organizations found. Please create an organization in Supabase first."
+                )
+            org_id = organizations[0].get("id")
+            logger.info(f"Using first available organization: {org_id}")
+
+        # Create the Supabase project
+        project_data = await supabase_service.create_project(
+            organization_id=org_id,
+            name=request.project_name,
+            region=request.region,
+            db_pass=request.db_pass
+        )
+
+        logger.info(f"Successfully created Supabase project: {request.project_name}")
+
+        return SupabaseCreateProjectResponse(
+            success=True,
+            project=project_data,
+            message=f"Supabase project '{request.project_name}' created successfully!"
+        )
+
+    except SupabaseAPIError as e:
+        logger.error(f"Supabase API error during project creation: {e.message}")
+        raise HTTPException(status_code=e.status_code or 500, detail=e.message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error creating Supabase project: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create Supabase project: {str(e)}")
 
 
 @router.post("/projects/{project_id}/supabase/connect", response_model=SupabaseConnectResponse)
