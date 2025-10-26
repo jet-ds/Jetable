@@ -693,7 +693,7 @@ async def run_act(
         content=message_content,
         metadata_json={
             "type": "act_instruction",
-            "cli_preference": cli_preference.value,
+            "cli_type": cli_preference.value,
             "fallback_enabled": fallback_enabled,
             "has_images": len(body.images) > 0,
             "image_paths": image_paths,
@@ -844,7 +844,7 @@ async def run_chat(
         content=message_content,
         metadata_json={
             "type": "chat_instruction",
-            "cli_preference": cli_preference.value,
+            "cli_type": cli_preference.value,
             "fallback_enabled": fallback_enabled,
             "has_images": len(body.images) > 0,
             "image_paths": image_paths,
