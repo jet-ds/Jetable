@@ -211,7 +211,8 @@ class CodexCLI(BaseCLI):
             workdir_abs,
             "exec",
             "--json",
-            "--include-plan-tool",
+            "--enable",
+            "plan_tool",
             "--skip-git-repo-check",
             "--dangerously-bypass-approvals-and-sandbox",
         ]
@@ -481,7 +482,19 @@ Do not create subdirectories unless specifically requested by the user.
                     continue
 
             if not session_ready:
+                stderr_output = ""
+                if process.stderr:
+                    try:
+                        stderr_bytes = await process.stderr.read()
+                        if stderr_bytes:
+                            stderr_output = stderr_bytes.decode(errors="ignore").strip()
+                    except Exception as stderr_err:
+                        ui.warning(f"Failed to read Codex stderr: {stderr_err}", "Codex")
+
                 ui.error("Failed to initialize Codex session", "Codex")
+                if stderr_output:
+                    ui.error(f"Codex stderr: {stderr_output}", "Codex")
+
                 try:
                     await process.wait()
                 except Exception:
