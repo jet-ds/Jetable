@@ -101,7 +101,7 @@ def test_fallback_cli_source_logic(db_session, tmpdir):
     # 2. Manually create a message with the old metadata key
     conversation_id = str(uuid.uuid4())
     from app.models.messages import Message
-    from datetime import datetime
+    from datetime import datetime, UTC
 
     old_message = Message(
         id=str(uuid.uuid4()),
@@ -111,7 +111,7 @@ def test_fallback_cli_source_logic(db_session, tmpdir):
         content="Old test instruction",
         metadata_json={"cli_preference": "claude"},
         conversation_id=conversation_id,
-        created_at=datetime.utcnow(),
+        created_at=datetime.now(UTC),
     )
     db_session.add(old_message)
     db_session.commit()

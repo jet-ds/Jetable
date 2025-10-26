@@ -4,7 +4,7 @@ Handles CLI execution and AI actions
 """
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, UTC
 import uuid
 import asyncio
 from sqlalchemy.orm import Session
@@ -144,7 +144,7 @@ async def execute_act_instruction(
                 status="active",
                 cli_type=cli_type,
                 instruction=instruction,
-                started_at=datetime.utcnow()
+                started_at=datetime.now(UTC)
             )
             db.add(session)
             db.commit()
@@ -257,7 +257,7 @@ async def execute_chat_task(
         if result and result.get("success"):
             # For chat mode, we don't commit changes - just update session status
             session.status = "completed"
-            session.completed_at = datetime.utcnow()
+            session.completed_at = datetime.now(UTC)
             
         else:
             # Error message
@@ -273,13 +273,13 @@ async def execute_chat_task(
                 },
                 conversation_id=conversation_id,
                 session_id=session.id,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(UTC)
             )
             db.add(error_msg)
             
             session.status = "failed"
             session.error = result.get("error") if result else "No CLI available"
-            session.completed_at = datetime.utcnow()
+            session.completed_at = datetime.now(UTC)
             
             # Send error message via WebSocket
             error_data = {
@@ -315,7 +315,7 @@ async def execute_chat_task(
         # Save error
         session.status = "failed"
         session.error = str(e)
-        session.completed_at = datetime.utcnow()
+        session.completed_at = datetime.now(UTC)
         
         error_msg = Message(
             id=str(uuid.uuid4()),
@@ -326,7 +326,7 @@ async def execute_chat_task(
             metadata_json={"type": "chat_error"},
             conversation_id=conversation_id,
             session_id=session.id,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(UTC)
         )
         db.add(error_msg)
         db.commit()
@@ -381,7 +381,7 @@ async def execute_act_task(
         if request_id:
             user_request = db.query(UserRequest).filter(UserRequest.id == request_id).first()
             if user_request:
-                user_request.started_at = datetime.utcnow()
+                user_request.started_at = datetime.now(UTC)
                 user_request.cli_type_used = cli_preference.value
                 user_request.model_used = project_selected_model
         
@@ -454,7 +454,7 @@ async def execute_act_task(
                             commit_hash=commit_result["commit_hash"],
                             message=commit_message,
                             author="AI Assistant",
-                            created_at=datetime.utcnow()
+                            created_at=datetime.now(UTC)
                         )
                         db.add(commit)
                         db.commit()
@@ -472,7 +472,7 @@ async def execute_act_task(
             
             # Update session status only (no success message to user)
             session.status = "completed"
-            session.completed_at = datetime.utcnow()
+            session.completed_at = datetime.now(UTC)
             
             # ★ NEW: Mark UserRequest as completed successfully
             if request_id:
@@ -480,7 +480,7 @@ async def execute_act_task(
                 if user_request:
                     user_request.is_completed = True
                     user_request.is_successful = True
-                    user_request.completed_at = datetime.utcnow()
+                    user_request.completed_at = datetime.now(UTC)
                     user_request.result_metadata = {
                         "cli_used": result.get("cli_used"),
                         "has_changes": result.get("has_changes", False),
@@ -504,13 +504,13 @@ async def execute_act_task(
                 },
                 conversation_id=conversation_id,
                 session_id=session.id,
-                created_at=datetime.utcnow()
+                created_at=datetime.now(UTC)
             )
             db.add(error_msg)
             
             session.status = "failed"
             session.error = result.get("error") if result else "No CLI available"
-            session.completed_at = datetime.utcnow()
+            session.completed_at = datetime.now(UTC)
             
             # ★ NEW: Mark UserRequest as completed with failure
             if request_id:
@@ -518,7 +518,7 @@ async def execute_act_task(
                 if user_request:
                     user_request.is_completed = True
                     user_request.is_successful = False
-                    user_request.completed_at = datetime.utcnow()
+                    user_request.completed_at = datetime.now(UTC)
                     user_request.error_message = result.get("error") if result else "No CLI available"
                     ui.warning(f"UserRequest {request_id[:8]}... marked as failed", "ACT")
                 else:
@@ -567,7 +567,7 @@ async def execute_act_task(
         # Save error
         session.status = "failed"
         session.error = str(e)
-        session.completed_at = datetime.utcnow()
+        session.completed_at = datetime.now(UTC)
         
         # ★ NEW: Mark UserRequest as failed due to exception
         if request_id:
@@ -575,7 +575,7 @@ async def execute_act_task(
             if user_request:
                 user_request.is_completed = True
                 user_request.is_successful = False
-                user_request.completed_at = datetime.utcnow()
+                user_request.completed_at = datetime.now(UTC)
                 user_request.error_message = str(e)
         
         error_msg = Message(
@@ -587,7 +587,7 @@ async def execute_act_task(
             metadata_json={"type": "act_error"},
             conversation_id=conversation_id,
             session_id=session.id,
-            created_at=datetime.utcnow()
+            created_at=datetime.now(UTC)
         )
         db.add(error_msg)
         db.commit()
@@ -700,7 +700,7 @@ async def run_act(
             "attachments": attachments
         },
         conversation_id=conversation_id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(UTC)
     )
     db.add(user_message)
     
@@ -711,7 +711,7 @@ async def run_act(
         status="active",
         instruction=body.instruction,
         cli_type=cli_preference.value,
-        started_at=datetime.utcnow()
+        started_at=datetime.now(UTC)
     )
     db.add(session)
     
@@ -724,7 +724,7 @@ async def run_act(
         session_id=session.id,
         instruction=body.instruction,
         request_type="act",
-        created_at=datetime.utcnow()
+        created_at=datetime.now(UTC)
     )
     db.add(user_request)
     
@@ -851,7 +851,7 @@ async def run_chat(
             "attachments": attachments
         },
         conversation_id=conversation_id,
-        created_at=datetime.utcnow()
+        created_at=datetime.now(UTC)
     )
     db.add(user_message)
     
@@ -862,7 +862,7 @@ async def run_chat(
         status="active",
         instruction=body.instruction,
         cli_type=cli_preference.value,
-        started_at=datetime.utcnow()
+        started_at=datetime.now(UTC)
     )
     db.add(session)
     
