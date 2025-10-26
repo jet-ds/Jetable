@@ -78,7 +78,10 @@ async def get_messages(
             parent_message_id=msg.parent_message_id,
             session_id=msg.session_id,
             conversation_id=msg.conversation_id,
-            cli_source=msg.metadata_json.get("cli_type") if msg.metadata_json else None,
+            cli_source=(
+                msg.metadata_json.get("cli_type")
+                or msg.metadata_json.get("cli_preference")
+            ) if msg.metadata_json else None,
             created_at=msg.created_at
         ) for msg in reversed(filtered_messages)
     ]
