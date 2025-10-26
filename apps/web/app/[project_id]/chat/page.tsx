@@ -4,7 +4,7 @@ import { AnimatePresence } from 'framer-motion';
 import { MotionDiv, MotionH3, MotionP, MotionButton } from '../../../lib/motion';
 import { useRouter, useSearchParams } from 'next/navigation';
 import dynamic from 'next/dynamic';
-import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo } from 'react-icons/fa';
+import { FaCode, FaDesktop, FaMobileAlt, FaPlay, FaStop, FaSync, FaCog, FaRocket, FaFolder, FaFolderOpen, FaFile, FaFileCode, FaCss3Alt, FaHtml5, FaJs, FaReact, FaPython, FaDocker, FaGitAlt, FaMarkdown, FaDatabase, FaPhp, FaJava, FaRust, FaVuejs, FaLock, FaHome, FaChevronUp, FaChevronRight, FaChevronDown, FaArrowLeft, FaArrowRight, FaRedo, FaExternalLinkAlt } from 'react-icons/fa';
 import { SiTypescript, SiGo, SiRuby, SiSvelte, SiJson, SiYaml, SiCplusplus } from 'react-icons/si';
 import { VscJson } from 'react-icons/vsc';
 import ChatLog from '../../../components/ChatLog';
@@ -1964,7 +1964,7 @@ export default function ChatPage({ params }: Params) {
                       
                       {/* Action Buttons Group */}
                       <div className="flex items-center gap-1.5">
-                        <button 
+                        <button
                           className="h-9 w-9 flex items-center justify-center bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
                           onClick={() => {
                             const iframe = document.querySelector('iframe');
@@ -1976,7 +1976,20 @@ export default function ChatPage({ params }: Params) {
                         >
                           <FaRedo size={14} />
                         </button>
-                        
+
+                        {/* Open in New Tab Button */}
+                        <button
+                          className="h-9 w-9 flex items-center justify-center bg-gray-100 dark:bg-gray-900 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                          onClick={() => {
+                            if (previewUrl) {
+                              window.open(previewUrl, '_blank');
+                            }
+                          }}
+                          title="Open preview in new tab"
+                        >
+                          <FaExternalLinkAlt size={14} />
+                        </button>
+
                         {/* Device Mode Toggle */}
                         <div className="h-9 flex items-center gap-1 bg-gray-100 dark:bg-gray-900 rounded-lg px-1 border border-gray-200 dark:border-gray-700">
                           <button
