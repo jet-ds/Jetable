@@ -431,7 +431,7 @@ export default function ProjectSettings({ isOpen, onClose, projectId, projectNam
 
   const handleSupabaseConnect = async () => {
     const projectName = prompt(`Enter Supabase project name (default: ${projectInfo?.name || projectId}):`) || projectInfo?.name || projectId;
-    
+
     if (!projectName) {
       alert('Project name is required');
       return;
@@ -450,15 +450,31 @@ export default function ProjectSettings({ isOpen, onClose, projectId, projectNam
 
       if (response.ok) {
         const result = await response.json();
-        alert(`Successfully connected to Supabase project: ${result.project_url}`);
+        alert(`Successfully connected to Supabase!\n\nProject: ${result.message}\nDashboard: ${result.project_url || 'N/A'}`);
         loadServiceConnections();
       } else {
-        const error = await response.text();
-        alert(`Failed to connect to Supabase: ${error}`);
+        const errorText = await response.text();
+        let errorMessage = 'Failed to connect to Supabase';
+
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.detail || errorMessage;
+        } catch {
+          errorMessage = errorText || errorMessage;
+        }
+
+        // Provide helpful context for common errors
+        if (errorMessage.includes('token not configured') || errorMessage.includes('401')) {
+          errorMessage += '\n\nPlease add your Supabase Personal Access Token in Global Settings first.';
+        } else if (errorMessage.includes('not found') || errorMessage.includes('404')) {
+          errorMessage += '\n\nMake sure the project name matches exactly with your Supabase dashboard.';
+        }
+
+        alert(`Failed to connect to Supabase: ${errorMessage}`);
       }
     } catch (error) {
       console.error('Supabase connection error:', error);
-      alert('Failed to connect to Supabase. Please try again.');
+      alert('Failed to connect to Supabase. Please check your network connection and try again.');
     } finally {
       setIsLoading(false);
     }

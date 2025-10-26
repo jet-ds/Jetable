@@ -12,6 +12,7 @@ from app.api.settings import router as settings_router
 from app.api.project_services import router as project_services_router
 from app.api.github import router as github_router
 from app.api.vercel import router as vercel_router
+from app.api.supabase import router as supabase_router
 from app.core.logging import configure_logging
 from app.core.terminal_ui import ui
 from sqlalchemy import inspect
@@ -65,6 +66,7 @@ app.include_router(settings_router)  # Settings API
 app.include_router(project_services_router)  # Project services API
 app.include_router(github_router)  # GitHub integration API
 app.include_router(vercel_router)  # Vercel integration API
+app.include_router(supabase_router)  # Supabase integration API
 
 
 @app.get("/health")
@@ -86,7 +88,7 @@ def on_startup() -> None:
     # Show available endpoints
     ui.info("API server ready")
     ui.panel(
-        "WebSocket: /api/chat/{project_id}\nREST API: /api/projects, /api/chat, /api/github, /api/vercel",
+        "WebSocket: /api/chat/{project_id}\nREST API: /api/projects, /api/chat, /api/github, /api/vercel, /api/supabase",
         title="Available Endpoints",
         style="green"
     )
