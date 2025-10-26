@@ -7,8 +7,6 @@ from app.db.base import Base
 from app.api.deps import get_db
 from app.models.projects import Project
 import uuid
-import os
-from pathlib import Path
 from unittest.mock import AsyncMock
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
