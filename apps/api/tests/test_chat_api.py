@@ -9,6 +9,7 @@ from app.models.projects import Project
 import uuid
 import os
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
 
@@ -44,7 +45,7 @@ def db_session():
         Base.metadata.drop_all(bind=engine)
 
 
-def test_send_message_and_verify_cli_source(db_session, tmpdir, mocker):
+def test_send_message_and_verify_cli_source(db_session, tmpdir, monkeypatch):
     # 1. Create a project to associate the message with
     project_id = str(uuid.uuid4())
     repo_path = tmpdir.mkdir("repo")
@@ -53,7 +54,8 @@ def test_send_message_and_verify_cli_source(db_session, tmpdir, mocker):
     db_session.commit()
 
     # Mock the background task execution function
-    mock_execute_act_task = mocker.patch("app.api.chat.act.execute_act_task")
+    mock_execute_act_task = AsyncMock()
+    monkeypatch.setattr("app.api.chat.act.execute_act_task", mock_execute_act_task)
 
     # 2. Send a message using the 'act' endpoint
     conversation_id = str(uuid.uuid4())
